@@ -145,8 +145,8 @@ class Tracker:
 
 		# Compare with old tracks
 		for t in self.tracks:
-			temp_boxes = torch.cat([t.box.view(1, -1), boxes])
-			temp_scores = torch.cat([torch.tensor([10.0]), scores])
+			temp_boxes = torch.cat([t.box.view(1, -1).to(self.device), boxes])
+			temp_scores = torch.cat([torch.tensor([10.0]).to(self.device), scores])
 			i_keep = nms(temp_boxes.to(self.device), temp_scores.to(self.device), self.nms_det)
 			i_keep = i_keep[torch.ge(i_keep, 1)] - 1
 			boxes = boxes[i_keep]
