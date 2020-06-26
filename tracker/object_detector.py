@@ -68,7 +68,7 @@ class FRCNN_FPN(FasterRCNN):
         # Resize to im
         pred_boxes = resize_boxes(pred_boxes, self.im_transformed_size, self.im_size)
 
-        return pred_boxes.detach(), pred_scores.detach()
+        return pred_boxes.detach().cpu(), pred_scores.detach().cpu()
 
 
 
