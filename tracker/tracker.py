@@ -50,11 +50,11 @@ class Tracker:
 	def get_pos(self):
 		"""Get the positions of all active tracks."""
 		if len(self.tracks) == 1:
-			box = self.tracks[0].box
+			box = self.tracks[0].box.view(1, 4)
 		elif len(self.tracks) > 1:
 			box = torch.stack([t.box for t in self.tracks], 0)
 		else:
-			box = torch.zeros(0).cuda()
+			box = torch.zeros(0)
 		return box
 
 	def data_association(self):
@@ -139,7 +139,7 @@ class Tracker:
 		scores = scores[i_keep]
 
 		# NMS within detections
-		i_keep = nms(boxes.to(self.device), scores.to(self.device), self.nms_det)
+		i_keep = nms(boxes.view(-1, 4).to(self.device), scores.to(self.device), self.nms_det)
 		boxes = boxes[i_keep]
 		scores = scores[i_keep]
 
