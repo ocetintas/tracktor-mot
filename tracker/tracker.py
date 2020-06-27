@@ -4,6 +4,7 @@ import torch.nn.functional as F
 
 import motmetrics as mm
 from torchvision.ops.boxes import clip_boxes_to_image, nms
+from tracker.utils import intersection_over_union
 
 
 class Tracker:
@@ -143,15 +144,23 @@ class Tracker:
 		boxes = boxes[i_keep]
 		scores = scores[i_keep]
 
-		# Compare with old tracks
-		for t in self.tracks:
-			temp_boxes = torch.cat([t.box.view(1, -1), boxes])
-			temp_scores = torch.cat([torch.tensor([10.0]), scores])
-			i_keep = nms(temp_boxes.to(self.device), temp_scores.to(self.device), self.nms_det)
-			i_keep = i_keep[torch.ge(i_keep, 1)] - 1
+		if self.tracks and torch.numel(boxes):
+			iou = intersection_over_union(self.get_pos(), boxes.view(-1, 4))
+			iou_bool = torch.gt(iou, self.nms_det)
+			iou_bool = iou_bool.any(dim=0)
+			i_keep = (iou_bool == False).nonzero().view(-1)
 			boxes = boxes[i_keep]
 			scores = scores[i_keep]
-		self.add(boxes, scores)
+		self.add(boxes.view(-1, 4), scores)
+
+		# # Compare with old tracks
+		# for t in self.tracks:
+		# 	temp_boxes = torch.cat([t.box.view(1, -1), boxes])
+		# 	temp_scores = torch.cat([torch.tensor([10.0]), scores])
+		# 	i_keep = nms(temp_boxes.to(self.device), temp_scores.to(self.device), self.nms_det)
+		# 	i_keep = i_keep[torch.ge(i_keep, 1)] - 1
+		# 	boxes = boxes[i_keep]
+		# 	scores = scores[i_keep]
 
 
 class Track(object):

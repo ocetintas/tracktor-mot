@@ -201,6 +201,30 @@ def _flip_coco_person_keypoints(kps, width):
     return flipped_data
 
 
+def intersection_over_union(track_box, detect_box):
+    """
+    Compute intersection over union between two sets of boxes
+    """
+    # Number of boxes coming from bbox regression and new detection
+    t_dim = track_box.size(0)
+    d_dim = detect_box.size(0)
+
+    # Match the sizes and calculate intersection area
+    b1 = torch.min(track_box[:, 2:].unsqueeze(1).expand(t_dim, d_dim, 2), detect_box[:, 2:].unsqueeze(0).expand(t_dim, d_dim, 2))
+    b2 = torch.max(track_box[:, :2].unsqueeze(1).expand(t_dim, d_dim, 2), detect_box[:, :2].unsqueeze(0).expand(t_dim, d_dim, 2))
+    intersection = torch.clamp(b1 - b2, min=0)
+    intersection = intersection[:, :, 0] * intersection[:, :, 1]
+
+    # Calculate the individual region
+    track_region = ((track_box[:, 2]-track_box[:, 0]) * (track_box[:, 3]-track_box[:, 1])).unsqueeze(1).expand_as(intersection)
+    detect_region = ((detect_box[:, 2]-detect_box[:, 0]) * (detect_box[:, 3]-detect_box[:, 1])).unsqueeze(0).expand_as(intersection)
+
+    # Calculate intersection over union
+    union = track_region + detect_region - intersection
+    iou = intersection / union
+    return iou
+
+
 class Compose(object):
     def __init__(self, transforms):
         self.transforms = transforms
