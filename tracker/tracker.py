@@ -3,8 +3,7 @@ import torch
 import torch.nn.functional as F
 
 import motmetrics as mm
-from torchvision.ops.boxes import clip_boxes_to_image, nms
-from tracker.utils import intersection_over_union
+from torchvision.ops.boxes import nms, box_iou
 
 
 class Tracker:
@@ -74,7 +73,6 @@ class Tracker:
 		self.inactive_tracks += inactives
 		self.tracks = [t for t in self.tracks if t not in inactives]
 
-
 	def data_association(self, frame):
 		"""
 		Data association is performed with bounding box regression from previous detections
@@ -125,7 +123,7 @@ class Tracker:
 
 		# Start a new track if the iou with all existing tracks is below the threshold
 		if self.tracks and torch.numel(boxes):
-			iou = intersection_over_union(self.get_pos(), boxes.view(-1, 4))
+			iou = box_iou(self.get_pos(), boxes.view(-1, 4))
 			iou_bool = torch.gt(iou, self.nms_det)
 			iou_bool = iou_bool.any(dim=0) 	# Check if any iou with previous tracks is above the threshold
 			i_keep = (iou_bool == False).nonzero().view(-1) 	# Only accept if no iou is greater than the threshold
