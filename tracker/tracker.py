@@ -14,14 +14,13 @@ class Tracker:
 		self.obj_detect = obj_detect
 
 		self.tracks = []
+		self.inactive_tracks = []
 		self.track_num = 0
 		self.im_index = 0
 		self.results = {}
 
 		self.mot_accum = None
 
-		# --------------------------
-		self.inactive_tracks = []
 		self.score_det = thresholds['score_det']
 		self.nms_det = thresholds['nms_det']
 		self.nms_reg = thresholds['nms_reg']
@@ -39,6 +38,7 @@ class Tracker:
 
 	def add(self, new_boxes, new_scores):
 		"""Initializes new Track objects and saves them."""
+		new_boxes = new_boxes.view(-1, 4)
 		num_new = len(new_boxes)
 		for i in range(num_new):
 			self.tracks.append(Track(
@@ -58,34 +58,6 @@ class Tracker:
 			box = torch.zeros(0)
 		return box
 
-	def data_association(self):
-		"""
-		Find tracks in the current frame
-		"""
-		if self.tracks:
-			self.bbox_regression_tracks()
-
-
-	def step(self, frame):
-		"""This function should be called every timestep to perform tracking with a blob
-		containing the image information.
-		"""
-		# Data association with bounding box regression
-		self.obj_detect.cache(frame['img'])
-		self.data_association()
-
-		# Object detection
-		boxes, scores = self.obj_detect.detect(frame['img'])
-		self.find_new_tracks(boxes, scores)
-
-		# results
-		for t in self.tracks:
-			if t.id not in self.results.keys():
-				self.results[t.id] = {}
-			self.results[t.id][self.im_index] = np.concatenate([t.box.cpu().numpy(), np.array([t.score])])
-
-		self.im_index += 1
-
 	def get_results(self):
 		return self.results
 
@@ -95,64 +67,89 @@ class Tracker:
 		"""
 		return torch.tensor([t.score for t in self.tracks])
 
-	def add_inactives(self, inactives):
+	def move_to_inactives(self, inactives):
 		"""
-		Move inactive tracks from active tracks list to inactive tracks list
+		Move inactive tracks and update tracks
 		"""
-		self.tracks = [t for t in self.tracks if t not in inactives]
 		self.inactive_tracks += inactives
+		self.tracks = [t for t in self.tracks if t not in inactives]
 
-	def bbox_regression_tracks(self):
-		"""
-		Bounding box regression from previous detections, followed by NMS
-		"""
-		# Bounding box regression of previous detections
-		boxes = self.get_pos()
-		new_boxes, new_scores = self.obj_detect.bbox_regression(boxes)
-		new_boxes = clip_boxes_to_image(new_boxes, self.obj_detect.im_size)
 
-		# Update current tracks and move low scores to inactives
-		inactives = []
-		for i, t in enumerate(self.tracks):
-			# Above the detection threshold
-			if new_scores[i] > self.score_det:
-				self.tracks[i].score = new_scores[i]
-				self.tracks[i].box = new_boxes[i]
-			else:
-				inactives += [t]
-		self.add_inactives(inactives)
-
-		# NMS
-		inactives = []
-		i_keep = nms(self.get_pos().to(self.device), self.get_scores().to(self.device), self.nms_reg)
-		for i, t in enumerate(self.tracks):
-			if i not in i_keep:
-				inactives += [t]
-		self.add_inactives(inactives)
-
-	def find_new_tracks(self, boxes, scores):
+	def data_association(self, frame):
 		"""
-		Create new tracks that does not exist in the previous frame
+		Data association is performed with bounding box regression from previous detections
 		"""
-		# Filter low scores
+		# Only if there are existing tracks
+		if self.tracks:
+			# Bounding box regression of previous detections
+			boxes = self.get_pos()
+			new_boxes, new_scores = self.obj_detect.bbox_regression(frame['img'], boxes)
+
+			# Update current track information and move tracks with low scores to inactives
+			inactives = []
+			for i, t in enumerate(self.tracks):
+				# Update tracks with scores above the threshold
+				if new_scores[i] > self.score_det:
+					self.tracks[i].score = new_scores[i]
+					self.tracks[i].box = new_boxes[i]
+				# Move low scores to inactives
+				else:
+					inactives += [t]
+			self.move_to_inactives(inactives)
+
+			# NMS of regressed boxes
+			inactives = []
+			i_keep = nms(self.get_pos().to(self.device), self.get_scores().to(self.device), self.nms_reg)
+			for i, t in enumerate(self.tracks):
+				if i not in i_keep:
+					inactives += [t]
+			self.move_to_inactives(inactives)
+
+	def find_new_tracks(self, frame):
+		"""
+		Create new tracks if the detected object is not in any track
+		"""
+
+		# Object detection with the current frame
+		boxes, scores = self.obj_detect.detect(frame['img'])
+
+		# Filter out low scores
 		i_keep = torch.gt(scores, self.score_det).nonzero().view(-1)
 		boxes = boxes[i_keep]
 		scores = scores[i_keep]
 
-		# NMS within detections
+		# NMS of new detections
 		i_keep = nms(boxes.view(-1, 4).to(self.device), scores.to(self.device), self.nms_det)
 		boxes = boxes[i_keep]
 		scores = scores[i_keep]
 
-		# Compare new detections with existing tracks and only start a new track if the iou is less than the threshold
+		# Start a new track if the iou with all existing tracks is below the threshold
 		if self.tracks and torch.numel(boxes):
 			iou = intersection_over_union(self.get_pos(), boxes.view(-1, 4))
 			iou_bool = torch.gt(iou, self.nms_det)
-			iou_bool = iou_bool.any(dim=0)
-			i_keep = (iou_bool == False).nonzero().view(-1)
+			iou_bool = iou_bool.any(dim=0) 	# Check if any iou with previous tracks is above the threshold
+			i_keep = (iou_bool == False).nonzero().view(-1) 	# Only accept if no iou is greater than the threshold
 			boxes = boxes[i_keep]
 			scores = scores[i_keep]
-		self.add(boxes.view(-1, 4), scores)
+		self.add(boxes, scores)
+
+	def step(self, frame):
+		"""This function should be called every timestep to perform tracking with a blob
+		containing the image information.
+		"""
+
+		# Data association with bounding box regression
+		self.data_association(frame)
+
+		# Find new tracks in the current frame
+		self.find_new_tracks(frame)
+
+		# Results
+		for t in self.tracks:
+			if t.id not in self.results.keys():
+				self.results[t.id] = {}
+			self.results[t.id][self.im_index] = np.concatenate([t.box.cpu().numpy(), np.array([t.score])])
+		self.im_index += 1
 
 
 class Track(object):
