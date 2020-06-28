@@ -30,39 +30,45 @@ class FRCNN_FPN(FasterRCNN):
         Tracking of the objects from previous frame with the bounding box regressor of the FRCNN_FPN
         """
 
-        # Move to device
+        # Move image and boxes to the device
         device = list(self.parameters())[0].device
         img = img.to(device)
         boxes = boxes.to(device)
 
-        # GeneralizedRCNN transform for the image
+        # Perform input transformation before feeding the image into a GeneralizedRCNN model of torchvision
         img_size = img.shape[-2:]
         img_transformed, targets = self.transform(img)
         img_transformed_size = img_transformed.image_sizes[0]
 
-        # Calculate features as suggested by GeneralizedRCNN class of torchvision.models.detection
+        # Calculate the backbone features and put them in a compatible format with RoIHeads and RPN class of torchvision
         backbone_features = self.backbone(img_transformed.tensors)
         if isinstance(backbone_features, torch.Tensor):
             backbone_features = OrderedDict([('0', backbone_features)])
 
-        # Resize to img_transformed size
+        # Resize boxes to img_transformed size
         boxes = resize_boxes(boxes, img_size, img_transformed_size)
 
-        # Forward pass of the RoIHeads of torchvision.models.detection
+        # Forward pass of the RoIHeads class of torchvision
         box_features = self.roi_heads.box_roi_pool(backbone_features, [boxes], [img_transformed_size])
         box_features = self.roi_heads.box_head(box_features)
         class_logits, box_regression = self.roi_heads.box_predictor(box_features)
-        pred_boxes = self.roi_heads.box_coder.decode(box_regression, [boxes])
-        pred_scores = F.softmax(class_logits, -1)
+
+        # Post-process the detections
+        boxes = self.roi_heads.box_coder.decode(box_regression, [boxes])
+        scores = F.softmax(class_logits, -1)
 
         # Remove predictions with the background label
-        pred_boxes = pred_boxes[:, 1:].squeeze(dim=1)
-        pred_scores = pred_scores[:, 1:].squeeze(dim=1)
+        boxes = boxes[:, 1:]
+        scores = scores[:, 1:]
+
+        # Put the tensors in the correct shape for the Track class
+        boxes = boxes.squeeze(dim=1)
+        scores = scores.squeeze(dim=1)
 
         # Resize to img size
-        pred_boxes = resize_boxes(pred_boxes, img_transformed_size, img_size)
+        boxes = resize_boxes(boxes, img_transformed_size, img_size)
 
-        return pred_boxes.detach().cpu(), pred_scores.detach().cpu()
+        return boxes.detach().cpu(), scores.detach().cpu()
 
 
 
