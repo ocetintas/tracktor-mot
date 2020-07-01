@@ -53,7 +53,7 @@ sequences = MOT16Sequences(seq_name, data_dir)
 
 
 # Thresholds of the tracker
-thresholds = {'score_det': 0.5, 'nms_det': 0.3, 'nms_reg': 0.6}
+thresholds = {'sigma_active': 0.5, 'lambda_active': 0.6, 'lambda_new': 0.3}
 
 # Configure the tracker
 tracker = Tracker(obj_detect, thresholds, device)

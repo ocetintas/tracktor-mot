@@ -20,9 +20,9 @@ class Tracker:
 
 		self.mot_accum = None
 
-		self.score_det = thresholds['score_det']
-		self.nms_det = thresholds['nms_det']
-		self.nms_reg = thresholds['nms_reg']
+		self.sigma_active = thresholds['sigma_active']
+		self.lambda_active = thresholds['lambda_active']
+		self.lambda_new = thresholds['lambda_new']
 
 		self.device = device
 
@@ -87,7 +87,7 @@ class Tracker:
 			inactives = []
 			for i, t in enumerate(self.tracks):
 				# Update tracks with scores above the threshold
-				if reg_scores[i] > self.score_det:
+				if reg_scores[i] > self.sigma_active:
 					self.tracks[i].score = reg_scores[i]
 					self.tracks[i].box = reg_boxes[i]
 				# Move low scores to inactives
@@ -97,7 +97,7 @@ class Tracker:
 
 			# NMS of regressed boxes
 			inactives = []
-			i_keep = nms(self.get_pos().to(self.device), self.get_scores().to(self.device), self.nms_reg)
+			i_keep = nms(self.get_pos().to(self.device), self.get_scores().to(self.device), self.lambda_active)
 			for i, t in enumerate(self.tracks):
 				if i not in i_keep:
 					inactives += [t]
@@ -112,19 +112,19 @@ class Tracker:
 		new_boxes, new_scores = self.obj_detect.detect(frame['img'])
 
 		# Filter out low scores
-		i_keep = torch.gt(new_scores, self.score_det).nonzero().view(-1)
+		i_keep = torch.gt(new_scores, self.sigma_active).nonzero().view(-1)
 		new_boxes = new_boxes[i_keep]
 		new_scores = new_scores[i_keep]
 
 		# NMS of new detections
-		i_keep = nms(new_boxes.view(-1, 4).to(self.device), new_scores.to(self.device), self.nms_det)
+		i_keep = nms(new_boxes.view(-1, 4).to(self.device), new_scores.to(self.device), self.lambda_new)
 		new_boxes = new_boxes[i_keep]
 		new_scores = new_scores[i_keep]
 
 		# Start a new track if the iou with all existing tracks is below the threshold
 		if self.tracks and torch.numel(new_boxes):
 			iou = box_iou(self.get_pos(), new_boxes.view(-1, 4))
-			iou_bool = torch.gt(iou, self.nms_det)
+			iou_bool = torch.gt(iou, self.lambda_new)
 			iou_bool = iou_bool.any(dim=0) 	# Check if any iou with previous tracks is above the threshold
 			i_keep = (iou_bool == False).nonzero().view(-1) 	# Only accept if no iou is greater than the threshold
 			new_boxes = new_boxes[i_keep]
