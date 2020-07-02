@@ -80,8 +80,7 @@ class Tracker:
 		# Only if there are existing tracks
 		if self.tracks:
 			# Bounding box regression of previous detections
-			boxes = self.get_pos()
-			reg_boxes, reg_scores = self.obj_detect.bbox_regression(frame['img'], boxes)
+			reg_boxes, reg_scores = self.obj_detect.bbox_regression(frame['img'], self.get_pos())
 
 			# Update current track information and move tracks with low scores to inactives
 			inactives = []
