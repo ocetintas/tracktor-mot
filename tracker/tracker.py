@@ -95,12 +95,12 @@ class Tracker:
 			self.move_to_inactives(inactives)
 
 			# NMS of regressed boxes
-			inactives = []
-			i_keep = nms(self.get_pos().to(self.device), self.get_scores().to(self.device), self.lambda_active)
-			for i, t in enumerate(self.tracks):
-				if i not in i_keep:
-					inactives += [t]
-			self.move_to_inactives(inactives)
+			# inactives = []
+			# i_keep = nms(self.get_pos().to(self.device), self.get_scores().to(self.device), self.lambda_active)
+			# for i, t in enumerate(self.tracks):
+			# 	if i not in i_keep:
+			# 		inactives += [t]
+			# self.move_to_inactives(inactives)
 
 	def find_new_tracks(self, frame):
 		"""
@@ -116,9 +116,9 @@ class Tracker:
 		new_scores = new_scores[i_keep]
 
 		# NMS of new detections
-		i_keep = nms(new_boxes.view(-1, 4).to(self.device), new_scores.to(self.device), self.lambda_new)
-		new_boxes = new_boxes[i_keep]
-		new_scores = new_scores[i_keep]
+		# i_keep = nms(new_boxes.view(-1, 4).to(self.device), new_scores.to(self.device), self.lambda_new)
+		# new_boxes = new_boxes[i_keep]
+		# new_scores = new_scores[i_keep]
 
 		# Start a new track if the iou with all existing tracks is below the threshold
 		if self.tracks and torch.numel(new_boxes):

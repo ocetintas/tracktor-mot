@@ -40,7 +40,7 @@ class FRCNN_FPN(FasterRCNN):
         img_transformed, targets = self.transform(img)
         img_transformed_size = img_transformed.image_sizes[0]
 
-        # Calculate the backbone features and put them in a compatible format with RoIHeads and RPN class of torchvision
+        # Calculate the backbone features and put them in a compatible format with RoIHeads and RPN classes of torchvision
         backbone_features = self.backbone(img_transformed.tensors)
         if isinstance(backbone_features, torch.Tensor):
             backbone_features = OrderedDict([('0', backbone_features)])
