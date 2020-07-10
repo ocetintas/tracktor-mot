@@ -66,6 +66,37 @@ class Tracker:
 		"""
 		return torch.tensor([t.score for t in self.tracks])
 
+	def motion_box(self, track):
+		"""
+		Calculate the approximate position of next bounding box assuming constant velocity
+		"""
+		prev_center = torch.tensor([track.prev_box[0]+track.prev_box[2]/2, track.prev_box[1]+track.prev_box[3]/2])
+		center = torch.tensor([track.box[0]+track.box[2]/2, track.box[1]+track.box[3]/2])
+		motion = center - prev_center
+		next_box = torch.tensor([track.box[0]+motion[0], track.box[1]+motion[1], track.box[2], track.box[3]])
+		return next_box
+
+	def get_motion_boxes(self):
+		"""
+		Get the positions of all tracks but use motion_boxes if available
+		"""
+		if len(self.tracks) == 1:
+			if self.tracks[0].prev_box is None:
+				box = self.tracks[0].box.view(1, 4)
+			else:
+				box = self.motion_box(self.tracks[0]).view(1, 4)
+		elif len(self.tracks) > 1:
+			motion_boxes = []
+			for t in self.tracks:
+				if t.prev_box is None:
+					motion_boxes += [t.box]
+				else:
+					motion_boxes += [self.motion_box(t)]
+			box = torch.stack(motion_boxes, 0)
+		else:
+			box = torch.zeros(0)
+		return box
+
 	def move_to_inactives(self, inactives):
 		"""
 		Move inactive tracks and update tracks
@@ -80,13 +111,14 @@ class Tracker:
 		# Only if there are existing tracks
 		if self.tracks:
 			# Bounding box regression of previous detections
-			reg_boxes, reg_scores = self.obj_detect.bbox_regression(frame['img'], self.get_pos())
+			reg_boxes, reg_scores = self.obj_detect.bbox_regression(frame['img'], self.get_motion_boxes())
 
 			# Update current track information and move tracks with low scores to inactives
 			inactives = []
 			for i, t in enumerate(self.tracks):
 				# Update tracks with scores above the threshold
 				if reg_scores[i] > self.sigma_active:
+					self.tracks[i].prev_box = self.tracks[i].box
 					self.tracks[i].score = reg_scores[i]
 					self.tracks[i].box = reg_boxes[i]
 				# Move low scores to inactives
@@ -95,12 +127,12 @@ class Tracker:
 			self.move_to_inactives(inactives)
 
 			# NMS of regressed boxes
-			# inactives = []
-			# i_keep = nms(self.get_pos().to(self.device), self.get_scores().to(self.device), self.lambda_active)
-			# for i, t in enumerate(self.tracks):
-			# 	if i not in i_keep:
-			# 		inactives += [t]
-			# self.move_to_inactives(inactives)
+			inactives = []
+			i_keep = nms(self.get_pos().to(self.device), self.get_scores().to(self.device), self.lambda_active)
+			for i, t in enumerate(self.tracks):
+				if i not in i_keep:
+					inactives += [t]
+			self.move_to_inactives(inactives)
 
 	def find_new_tracks(self, frame):
 		"""
@@ -116,9 +148,9 @@ class Tracker:
 		new_scores = new_scores[i_keep]
 
 		# NMS of new detections
-		# i_keep = nms(new_boxes.view(-1, 4).to(self.device), new_scores.to(self.device), self.lambda_new)
-		# new_boxes = new_boxes[i_keep]
-		# new_scores = new_scores[i_keep]
+		i_keep = nms(new_boxes.view(-1, 4).to(self.device), new_scores.to(self.device), self.lambda_new)
+		new_boxes = new_boxes[i_keep]
+		new_scores = new_scores[i_keep]
 
 		# Start a new track if the iou with all existing tracks is below the threshold
 		if self.tracks and torch.numel(new_boxes):
@@ -156,3 +188,5 @@ class Track(object):
 		self.id = track_id
 		self.box = box
 		self.score = score
+
+		self.prev_box = None
