@@ -110,8 +110,16 @@ class Tracker:
 		"""
 		# Only if there are existing tracks
 		if self.tracks:
-			# Bounding box regression of previous detections w
-			reg_boxes, reg_scores = self.obj_detect.bbox_regression(frame['img'], self.get_trajectory_boxes())
+			# Bounding box regression of previous detections
+			reg_boxes, reg_scores = self.obj_detect.bbox_regression(frame['img'], self.get_pos())
+			# Bounding box regression with trajectory prediction
+			trj_boxes, trj_scores = self.obj_detect.bbox_regression(frame['img'], self.get_trajectory_boxes())
+
+			# Compare both and choose the best one
+			i_trj = (reg_scores < trj_scores).nonzero().view(-1)
+			if torch.numel(i_trj):
+				reg_boxes[i_trj] = trj_boxes[i_trj]
+				reg_scores[i_trj] = trj_scores[i_trj]
 
 			# Update current track information and move tracks with low scores to inactives
 			inactives = []
