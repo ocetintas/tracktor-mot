@@ -1,1 +1,2 @@
-# CV3:DST Homework
+# tracktor-mot
+![Alt text](img/ex_output.png?raw=true "Result")
